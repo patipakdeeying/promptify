@@ -14,7 +14,7 @@
 
 ## 🛠️ How to Use
 
-1. Open [live URL](https://patipakdeeying.github.io/promptify/) or host it your self.
+1. Open [live URL](https://patipakdeeying.github.io/promptify/) or host it your self or download html file and just open it.
 2. Click **Add Folder** to select your project directory or drag it into the drop zone.
 3. Wait a split second for the "Processing" indicator to finish.
 4. The generated prompt is now in your clipboard! Paste it directly into your favorite AI chat.
