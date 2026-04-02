@@ -59,15 +59,15 @@
             <label class="flex flex-col items-center justify-center p-8 bg-white border-2 border-dashed border-slate-300 rounded-2xl cursor-pointer hover:border-blue-500 hover:bg-blue-50 transition-all group" id="dropZone">
                 <input type="file" id="fileInput" multiple class="hidden">
                 <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mb-2 text-slate-400 group-hover:text-blue-500"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-                <span class="text-sm font-medium text-slate-700">Add Files</span>
-                <span class="text-xs text-slate-400 mt-1 text-center px-4">Standard files or Drag & Drop</span>
+                <span class="text-sm font-medium text-slate-700">Add Files / Drag & Drop</span>
+                <span class="text-xs text-slate-400 mt-1 text-center px-4">Supports multiple files or folders</span>
             </label>
 
             <label class="flex flex-col items-center justify-center p-8 bg-white border-2 border-dashed border-slate-300 rounded-2xl cursor-pointer hover:border-indigo-500 hover:bg-indigo-50 transition-all group">
                 <input type="file" id="folderInput" webkitdirectory directory multiple class="hidden">
                 <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mb-2 text-slate-400 group-hover:text-indigo-500"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2z"/></svg>
                 <span class="text-sm font-medium text-slate-700">Add Folder</span>
-                <span class="text-xs text-slate-400 mt-1 text-center px-4">Recursively reads directory content</span>
+                <span class="text-xs text-slate-400 mt-1 text-center px-4">Select a directory to scan</span>
             </label>
         </div>
 
@@ -77,15 +77,15 @@
                 <div class="flex flex-wrap items-center gap-6">
                     <label class="flex items-center gap-2 cursor-pointer group">
                         <input type="checkbox" id="ignoreBinary" checked class="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500">
-                        <span class="text-sm text-slate-700 group-hover:text-slate-900 transition-colors">Skip binary (Images/Audio)</span>
+                        <span class="text-sm text-slate-700 group-hover:text-slate-900 transition-colors">Skip binary</span>
                     </label>
                     <label class="flex items-center gap-2 cursor-pointer group">
                         <input type="checkbox" id="includeTree" checked class="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500">
-                        <span class="text-sm text-slate-700 group-hover:text-slate-900 transition-colors">Include Project Tree</span>
+                        <span class="text-sm text-slate-700 group-hover:text-slate-900 transition-colors">Project Tree</span>
                     </label>
                     <label class="flex items-center gap-2 cursor-pointer group">
                         <input type="checkbox" id="useCodeBlocks" checked class="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500">
-                        <span class="text-sm text-slate-900 font-semibold transition-colors">Use Markdown Blocks</span>
+                        <span class="text-sm text-slate-900 font-semibold transition-colors">Markdown Blocks</span>
                     </label>
                 </div>
                 
@@ -131,8 +131,8 @@
 
         <footer class="mt-10 text-center">
             <p class="text-slate-400 text-xs leading-relaxed">
-                Files are processed locally in your browser. No data is sent to a server. <br>
-                Automatically ignores <code class="bg-slate-200 text-slate-600 px-1 rounded">node_modules</code>, <code class="bg-slate-200 text-slate-600 px-1 rounded">.git</code>, and build folders.
+                Files are processed locally in your browser. <br>
+                Automatically ignores <code class="bg-slate-200 text-slate-600 px-1 rounded">node_modules</code>, <code class="bg-slate-200 text-slate-600 px-1 rounded">.git</code>, etc.
             </p>
         </footer>
     </div>
@@ -171,8 +171,8 @@
 
         // --- Event Listeners ---
 
-        fileInput.addEventListener('change', (e) => handleFiles(e.target.files));
-        folderInput.addEventListener('change', (e) => handleFiles(e.target.files));
+        fileInput.addEventListener('change', (e) => handleFiles(Array.from(e.target.files)));
+        folderInput.addEventListener('change', (e) => handleFiles(Array.from(e.target.files)));
 
         dropZone.addEventListener('dragover', (e) => {
             e.preventDefault();
@@ -183,13 +183,45 @@
             dropZone.classList.remove('drag-active');
         });
 
-        dropZone.addEventListener('drop', (e) => {
+        dropZone.addEventListener('drop', async (e) => {
             e.preventDefault();
             dropZone.classList.remove('drag-active');
-            if (e.dataTransfer.files.length > 0) {
-                handleFiles(e.dataTransfer.files);
+            
+            const items = e.dataTransfer.items;
+            if (!items) return;
+
+            statusIndicator.classList.remove('hidden');
+            const files = [];
+
+            // Use the FileSystem API to traverse entries
+            for (let i = 0; i < items.length; i++) {
+                const entry = items[i].webkitGetAsEntry();
+                if (entry) {
+                    await traverseEntry(entry, files);
+                }
             }
+            
+            handleFiles(files);
         });
+
+        async function traverseEntry(entry, fileList, path = '') {
+            if (ignoredFolders.has(entry.name)) return;
+
+            if (entry.isFile) {
+                const file = await new Promise((resolve) => entry.file(resolve));
+                // Manually set relative path if not present (helps with single files dropped)
+                Object.defineProperty(file, 'webkitRelativePath', {
+                    value: path ? `${path}/${file.name}` : file.name
+                });
+                fileList.push(file);
+            } else if (entry.isDirectory) {
+                const dirReader = entry.createReader();
+                const entries = await new Promise((resolve) => dirReader.readEntries(resolve));
+                for (const childEntry of entries) {
+                    await traverseEntry(childEntry, fileList, path ? `${path}/${entry.name}` : entry.name);
+                }
+            }
+        }
 
         copyBtn.addEventListener('click', () => {
             copyToClipboard(output.value);
@@ -201,15 +233,17 @@
 
         // --- Core Logic ---
 
-        async function handleFiles(fileList) {
-            if (!fileList || fileList.length === 0) return;
+        async function handleFiles(filesArray) {
+            if (!filesArray || filesArray.length === 0) {
+                statusIndicator.classList.add('hidden');
+                return;
+            }
             
             statusIndicator.classList.remove('hidden');
             output.value = 'Analyzing and converting...';
 
             try {
-                const filesArray = Array.from(fileList);
-                let promptResult = "I am providing my codebase below for context. Please analyze the following project structure and file contents:\n\n";
+                let promptResult = "";
 
                 // 1. Generate Tree Structure
                 if (includeTree.checked) {
@@ -227,7 +261,6 @@
                     const path = file.webkitRelativePath || file.name;
                     const pathParts = path.split('/');
                     
-                    // Filter out ignored folders logic
                     if (pathParts.some(part => ignoredFolders.has(part))) continue;
 
                     const ext = file.name.split('.').pop().toLowerCase();
@@ -255,7 +288,6 @@
 
                 output.value = promptResult;
                 
-                // Automatic Copy
                 if (promptResult.trim().length > 0) {
                     copyToClipboard(promptResult);
                 }
@@ -273,8 +305,6 @@
             files.forEach(file => {
                 const path = file.webkitRelativePath || file.name;
                 const parts = path.split('/');
-                
-                // We keep all files in tree to show structure even if we skip content
                 let current = tree;
                 parts.forEach((part, index) => {
                     if (!current[part]) {
@@ -313,7 +343,6 @@
                 const reader = new FileReader();
                 reader.onload = (e) => {
                     const content = e.target.result;
-                    // Binary check (null bytes)
                     if (content.includes('\0')) {
                         resolve(null);
                     } else {
@@ -327,7 +356,6 @@
 
         function copyToClipboard(text) {
             if (!text) return;
-            
             const textArea = document.createElement("textarea");
             textArea.value = text;
             textArea.style.position = "fixed";
@@ -336,16 +364,12 @@
             document.body.appendChild(textArea);
             textArea.focus();
             textArea.select();
-            
             try {
                 const successful = document.execCommand('copy');
-                if (successful) {
-                    showNotification();
-                }
+                if (successful) showNotification();
             } catch (err) {
                 console.error('Copy failed', err);
             }
-            
             document.body.removeChild(textArea);
         }
 
