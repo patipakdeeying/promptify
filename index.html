@@ -77,7 +77,7 @@
                 <div class="flex flex-wrap items-center gap-6">
                     <label class="flex items-center gap-2 cursor-pointer group">
                         <input type="checkbox" id="ignoreBinary" checked class="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500">
-                        <span class="text-sm text-slate-700 group-hover:text-slate-900 transition-colors">Skip binary</span>
+                        <span class="text-sm text-slate-700 group-hover:text-slate-900 transition-colors">Skip binary content</span>
                     </label>
                     <label class="flex items-center gap-2 cursor-pointer group">
                         <input type="checkbox" id="includeTree" checked class="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500">
@@ -156,7 +156,7 @@
         ]);
 
         const ignoredFolders = new Set([
-            'node_modules', '.git', '.next', '.cache', 'dist', 'build', '.vscode', '.idea', 'vendor', 'img', 'sound', 'fonts'
+            'node_modules', '.git', '.next', '.cache', 'dist', 'build', '.vscode', '.idea', 'vendor'
         ]);
 
         const extensionToLang = {
@@ -193,7 +193,6 @@
             statusIndicator.classList.remove('hidden');
             const files = [];
 
-            // Use the FileSystem API to traverse entries
             for (let i = 0; i < items.length; i++) {
                 const entry = items[i].webkitGetAsEntry();
                 if (entry) {
@@ -209,14 +208,18 @@
 
             if (entry.isFile) {
                 const file = await new Promise((resolve) => entry.file(resolve));
-                // Manually set relative path if not present (helps with single files dropped)
                 Object.defineProperty(file, 'webkitRelativePath', {
                     value: path ? `${path}/${file.name}` : file.name
                 });
                 fileList.push(file);
             } else if (entry.isDirectory) {
                 const dirReader = entry.createReader();
-                const entries = await new Promise((resolve) => dirReader.readEntries(resolve));
+                let entries = [];
+                let readResult = await new Promise((resolve) => dirReader.readEntries(resolve));
+                while (readResult.length > 0) {
+                    entries.push(...readResult);
+                    readResult = await new Promise((resolve) => dirReader.readEntries(resolve));
+                }
                 for (const childEntry of entries) {
                     await traverseEntry(childEntry, fileList, path ? `${path}/${entry.name}` : entry.name);
                 }
@@ -245,7 +248,7 @@
             try {
                 let promptResult = "";
 
-                // 1. Generate Tree Structure
+                // 1. Generate Tree Structure - Show EVERYTHING that was found
                 if (includeTree.checked) {
                     promptResult += "### PROJECT STRUCTURE\n";
                     if (useCodeBlocks.checked) promptResult += "```text\n";
@@ -254,7 +257,7 @@
                     promptResult += "\n";
                 }
 
-                // 2. Read Contents
+                // 2. Read Contents - Filter based on "Skip binary"
                 promptResult += "### FILE CONTENTS\n\n";
                 
                 for (const file of filesArray) {
@@ -264,10 +267,14 @@
                     if (pathParts.some(part => ignoredFolders.has(part))) continue;
 
                     const ext = file.name.split('.').pop().toLowerCase();
-                    if (ignoreBinary.checked && binaryExtensions.has(ext)) continue;
+                    const isBinaryByExt = binaryExtensions.has(ext);
+
+                    // Skip reading content if it's a binary extension and user wants to skip
+                    if (ignoreBinary.checked && isBinaryByExt) continue;
 
                     try {
                         const text = await readFileAsText(file);
+                        // If file contained null bytes during reading, it's truly binary
                         if (text !== null) {
                             if (useCodeBlocks.checked) {
                                 const lang = extensionToLang[ext] || '';
@@ -305,6 +312,9 @@
             files.forEach(file => {
                 const path = file.webkitRelativePath || file.name;
                 const parts = path.split('/');
+                
+                if (parts.some(part => ignoredFolders.has(part))) return;
+
                 let current = tree;
                 parts.forEach((part, index) => {
                     if (!current[part]) {
@@ -343,6 +353,7 @@
                 const reader = new FileReader();
                 reader.onload = (e) => {
                     const content = e.target.result;
+                    // Check for null bytes - if found, it's a binary file and we skip content
                     if (content.includes('\0')) {
                         resolve(null);
                     } else {
